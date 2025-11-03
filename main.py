@@ -27,31 +27,31 @@ DBNAME = os.getenv("DBNAME")
 # -----------------------------------
 
 # Connect to the database
-try:
-    connection = psycopg2.connect(
-        user=USER,
-        password=PASSWORD,
-        host=HOST,
-        port=PORT,
-        dbname=DBNAME
-    )
-    print("Connection successful!")
+# try:
+#     connection = psycopg2.connect(
+#         user=USER,
+#         password=PASSWORD,
+#         host=HOST,
+#         port=PORT,
+#         dbname=DBNAME
+#     )
+#     print("Connection successful!")
     
-    # Create a cursor to execute SQL queries
-    cursor = connection.cursor()
+#     # Create a cursor to execute SQL queries
+#     cursor = connection.cursor()
     
-    # Example query
-    cursor.execute("SELECT NOW();")
-    result = cursor.fetchone()
-    print("Current Time:", result)
+#     # Example query
+#     cursor.execute("SELECT NOW();")
+#     result = cursor.fetchone()
+#     print("Current Time:", result)
 
-    # Close the cursor and connection
-    cursor.close()
-    connection.close()
-    print("Connection closed.")
+#     # Close the cursor and connection
+#     cursor.close()
+#     connection.close()
+#     print("Connection closed.")
 
-except Exception as e:
-    print(f"Failed to connect: {e}")
+# except Exception as e:
+#     print(f"Failed to connect: {e}")
 
 
 # Initialize Supabase client
@@ -94,55 +94,8 @@ def get_media_for_claim(media_id : int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
-@app.post("/claim_media")
-async def upload_media(
-    
-    claim_id: int = Form(...), 
-    uploaded_by_user_id: int = Form(...), 
-    file: UploadFile = File(...)
-):
-    
-
-    try:
-        # Get the file extension (e.g., ".jpg", ".png")
-        file_extension = os.path.splitext(file.filename)[1]
-
-        file_path = f"claims/{uuid.uuid4()}{file_extension}"
-        # ------------------------------
-
-        # 1. Upload the file to Supabase Storage
-        file_content = await file.read()
-        supabase.storage.from_(BUCKET_NAME).upload(
-            path=file_path,
-            file=file_content,
-            file_options={"content-type": file.content_type}
-        )
-
-        # 2. Save the metadata to the Postgres database
-        db_entry = {
-            
-            "claim_id": claim_id,
-            "uploaded_by_user_id": uploaded_by_user_id,
-            "storage_path": file_path  # Store the new, unique path
-        }
-        response = supabase.table("claim_media").insert(db_entry).execute()
-
-        if not response.data:
-            # If DB insert fails, remove the orphaned file from storage
-            supabase.storage.from_(BUCKET_NAME).remove([file_path])
-            raise HTTPException(status_code=500, detail="Failed to save metadata after upload.")
-
-        return response.data[0]
-
-    except Exception as e:
-        # Check if it's a Supabase storage error
-        if "The resource already exists" in str(e):
-            raise HTTPException(status_code=409, detail=f"Duplicate file error: {str(e)}")
-        # General error
-        raise HTTPException(status_code=500, detail=f"Error uploading file: {str(e)}")
-    
-@app.post("/claim_media/multiple")
+  
+@app.post("/claim_media/")
 async def upload_multiple_media(
     claim_id: int = Form(...), 
     uploaded_by_user_id: int = Form(...),

@@ -252,4 +252,6 @@ def delete_photo(photo_id: int):
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+# doing this for trigger
 

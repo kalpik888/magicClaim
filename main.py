@@ -163,13 +163,14 @@ async def upload_multiple_media(
 
 
 ### API 3: Update a Photo's Title
-@app.put("/photos/{photo_id}")
-def update_photo_title(photo_id: int, photo_update: PhotoUpdate):
+@app.put("/photos/{media_id}")
+def update_photo_title(media_id: int,photo_update: UploadFile = File(...)):
     """Updates the 'title' of a photo in the database."""
+    
     try:
-        response = supabase.table("photos").update(
+        response = supabase.table("claim_media").update(
             {"title": photo_update.title}
-        ).eq("id", photo_id).execute()
+        ).eq("media_id", media_id).execute()
         
         if not response.data:
             raise HTTPException(status_code=404, detail="Photo not found.")
@@ -180,12 +181,12 @@ def update_photo_title(photo_id: int, photo_update: PhotoUpdate):
 
 
 ### API 4: Delete a Photo
-@app.delete("/photos/{photo_id}")
-def delete_photo(photo_id: int):
+@app.delete("/photos/{media_id}")
+def delete_photo(media_id: int):
     """Deletes a photo from the DB and from Supabase Storage."""
     try:
         # 1. Find the photo in the DB to get its storage_path
-        select_response = supabase.table("photos").select("storage_path").eq("id", photo_id).execute()
+        select_response = supabase.table("claim_media").select("storage_path").eq("media_id", media_id).execute()
         if not select_response.data:
             raise HTTPException(status_code=404, detail="Photo not found.")
         
@@ -196,7 +197,7 @@ def delete_photo(photo_id: int):
             supabase.storage.from_(BUCKET_NAME).remove([storage_path])
 
         # 3. Delete the record from the database
-        delete_response = supabase.table("photos").delete().eq("id", photo_id).execute()
+        delete_response = supabase.table("claim_media").delete().eq("media_id", media_id).execute()
         
         if not delete_response.data:
             raise HTTPException(status_code=404, detail="Failed to delete photo record.")

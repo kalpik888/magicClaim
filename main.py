@@ -3,9 +3,10 @@ from dotenv import load_dotenv
 import os
 from fastapi import FastAPI, UploadFile, File, HTTPException,Form
 from supabase import create_client, Client
-from pydantic import BaseModel
+from pydantic import BaseModel,ConfigDict
 import uuid 
-from typing import List
+from typing import List,Optional
+from datetime import date, time,datetime
 
 # Load environment variables from .env
 load_dotenv()
@@ -22,36 +23,6 @@ HOST = os.getenv("HOST")
 PORT = os.getenv("PORT")
 DBNAME = os.getenv("DBNAME")
 
-
-
-# -----------------------------------
-
-# Connect to the database
-# try:
-#     connection = psycopg2.connect(
-#         user=USER,
-#         password=PASSWORD,
-#         host=HOST,
-#         port=PORT,
-#         dbname=DBNAME
-#     )
-#     print("Connection successful!")
-    
-#     # Create a cursor to execute SQL queries
-#     cursor = connection.cursor()
-    
-#     # Example query
-#     cursor.execute("SELECT NOW();")
-#     result = cursor.fetchone()
-#     print("Current Time:", result)
-
-#     # Close the cursor and connection
-#     cursor.close()
-#     connection.close()
-#     print("Connection closed.")
-
-# except Exception as e:
-#     print(f"Failed to connect: {e}")
 
 
 # Initialize Supabase client
@@ -72,6 +43,24 @@ BUCKET_NAME = "photos"
 class PhotoUpdate(BaseModel):
     title: str
 
+class ClaimCreate(BaseModel):
+    policy_id: str
+    customer_id: str
+    date_of_incident: date
+    incident_time: time
+    incident_location: str
+    description: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class ClaimResponse(BaseModel):
+    claim_id: str
+    policy_id: str
+    customer_id: str
+    date_of_incident: date
+    incident_time: time
+    incident_location: str
+    description: Optional[str] = None
 # --- 2. The 4 API Endpoints ---
 
 ### API 1: View (Read) All Photos
@@ -93,22 +82,50 @@ def get_media_for_claim(media_id : int):
         return response.data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+
+@app.post("/claims", response_model=ClaimResponse)
+def create_claim(claim_data: ClaimCreate):
+    try:
+        # 1. Generate ID
+        new_claim_id = f"CL-{uuid.uuid4()}"
+
+        new_claim_data = claim_data.model_dump(mode='json')
+        # ------------------------------------
+        
+        new_claim_data["claim_id"] = new_claim_id
+
+        response = supabase.table("claim").insert(new_claim_data).execute()
+        
+        if not response.data:
+            raise HTTPException(status_code=500, detail="Failed to create claim.")
+            
+        # --- THIS IS THE FIX for the RETURN ---
+        # We parse the data from Supabase (which also has date objects)
+        # into our Pydantic model, which knows how to serialize it.
+        return ClaimResponse(**response.data[0])
+        # ------------------------------------
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
   
 @app.post("/claim_media/")
 async def upload_multiple_media(
-    claim_id: int = Form(...), 
+    claim_id: str = Form(...), 
     uploaded_by_user_id: int = Form(...),
-    files: List[UploadFile] = File(...)  # <--- KEY CHANGE
+    files: List[UploadFile] = File(...),
+    descriptions: List[str] = Form(...)
 ):
-    """Uploads multiple media files to storage and saves their
-    metadata to the ClaimMedia table."""
     
     db_entries = []
     uploaded_storage_paths = []
+    
 
-    for file in files:
+    for index, file in enumerate(files):
         try:
+            description = descriptions[index]
+            
             # 1. Create a unique path for each file
             file_extension = os.path.splitext(file.filename)[1]
             file_path = f"claims/{uuid.uuid4()}{file_extension}"
@@ -127,7 +144,8 @@ async def upload_multiple_media(
             db_entries.append({
                 "claim_id": claim_id,
                 "uploaded_by_user_id": uploaded_by_user_id,
-                "storage_path": file_path
+                "storage_path": file_path,
+                "description": description
             })
             # Keep track of uploaded files for potential rollback
             uploaded_storage_paths.append(file_path)

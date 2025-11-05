@@ -8,11 +8,28 @@ import uuid
 from typing import List,Optional
 from datetime import date, time,datetime
 import json
+from fastapi.middleware.cors import CORSMiddleware
 
 # Load environment variables from .env
 load_dotenv()
 
 app = FastAPI()
+
+origins = [
+    "http://localhost:5174",  # Your dev frontend from the error
+    "http://localhost:5173",  # A common Vite default
+    "http://localhost:3000",  # A common React default
+    "http://localhost",
+    # "https'://your-deployed-frontend.com"  # <-- Add your LIVE frontend URL here
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,       # Allow specific origins
+    allow_credentials=True,    # Allow cookies
+    allow_methods=["*"],       # Allow all methods (GET, POST, etc.)
+    allow_headers=["*"],       # Allow all headers
+)
 
 URL = os.getenv("SUPABASE_URL")
 KEY = os.getenv("SUPABASE_SERVICE_KEY")

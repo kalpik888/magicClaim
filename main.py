@@ -7,6 +7,7 @@ from pydantic import BaseModel,ConfigDict
 import uuid 
 from typing import List,Optional
 from datetime import date, time,datetime
+import json
 
 # Load environment variables from .env
 load_dotenv()
@@ -117,7 +118,7 @@ async def upload_multiple_media(
     files: List[UploadFile] = File(...),
     descriptions: List[str] = Form(...)
 ):
-    
+    #descriptions = ["","desp1"]
     db_entries = []
     uploaded_storage_paths = []
     
@@ -167,6 +168,14 @@ async def upload_multiple_media(
     try:
         # This is much faster than inserting one by one!
         response = supabase.table("claim_media").insert(db_entries).execute()
+
+        try:
+            supabase.table("claim").update({"status": "active"}).eq("claim_id", claim_id).execute()
+        except Exception as e:
+            # If this update fails, it's not a critical error.
+            # The photos are still saved. We just log it.
+            print(f"WARNING: Failed to update claim {claim_id} status to 'active': {e}")
+
         return response.data
     
     except Exception as e:
@@ -177,6 +186,117 @@ async def upload_multiple_media(
         raise HTTPException(
             status_code=500, 
             detail=f"Error saving file metadata to database: {str(e)}"
+        )
+    
+@app.post("/claim/full_submission")
+async def create_claim_and_upload_media(
+    # These are all the individual form fields
+    uploaded_by_user_id: int = Form(...),
+    files: List[UploadFile] = File(...),
+    descriptions: List[str] = Form(...),
+    
+    # This is the key: we receive all the claim data as one string
+    claim_data_json: str = Form(...) 
+):
+    """
+    Creates a new claim AND uploads media in a single transaction.
+    - 'claim_data_json' must be a stringified JSON object matching ClaimCreate.
+    - A claim is only created if at least one file is provided.
+    """
+    
+    # --- 1. Validate Inputs ---
+    if not files:
+        raise HTTPException(status_code=400, detail="A claim must include at least one photo.")
+    
+    #descriptions = ["dsd",""]
+    
+    # if len(files) != len(descriptions):
+    #     raise HTTPException(
+    #         status_code=400, 
+    #         detail=f"File count ({len(files)}) and description count ({len(descriptions)}) do not match."
+    #     )
+
+    # --- 2. Parse the Claim Data String ---
+    try:
+        # Convert the string back into a dictionary
+        claim_data_dict = json.loads(claim_data_json)
+        # Validate the dictionary using our Pydantic model
+        claim_data = ClaimCreate(**claim_data_dict)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON format for claim_data_json.")
+    except Exception as e: # Catches Pydantic validation errors
+        raise HTTPException(status_code=422, detail=f"Invalid claim data: {str(e)}")
+
+    # --- 3. Process All Files (Upload to Storage) ---
+    new_claim_id = f"CL-{uuid.uuid4()}"
+    uploaded_storage_paths = []
+    db_media_entries = []
+
+    for index, file in enumerate(files):
+        try:
+            desc_text = descriptions[index]
+            description = desc_text if desc_text else None
+            
+            file_extension = os.path.splitext(file.filename)[1]
+            file_path = f"claims/{new_claim_id}/{uuid.uuid4()}{file_extension}"
+            
+            file_content = await file.read()
+            
+            supabase.storage.from_(BUCKET_NAME).upload(
+                path=file_path,
+                file=file_content,
+                file_options={"content-type": file.content_type}
+            )
+            
+            # Add to lists for later
+            uploaded_storage_paths.append(file_path)
+            db_media_entries.append({
+                "claim_id": new_claim_id,
+                "uploaded_by_user_id": uploaded_by_user_id,
+                "storage_path": file_path,
+                "description": description
+            })
+            
+        except Exception as e:
+            # --- ROLLBACK FILES ---
+            # If any file fails, delete what we've uploaded so far
+            if uploaded_storage_paths:
+                supabase.storage.from_(BUCKET_NAME).remove(uploaded_storage_paths)
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Error uploading file {file.filename}: {str(e)}"
+            )
+
+    # --- 4. Save to Database (Claim + Media) ---
+    try:
+        # 1. Create the main claim record
+        claim_record = claim_data.model_dump(mode='json') # Use 'json' mode for dates
+        claim_record["claim_id"] = new_claim_id
+        
+        claim_response = supabase.table("claim").insert(claim_record).execute()
+        if not claim_response.data:
+            raise Exception("Failed to insert claim record.")
+
+        # 2. Create the media records
+        media_response = supabase.table("claim_media").insert(db_media_entries).execute()
+        if not media_response.data:
+            raise Exception("Failed to insert media records.")
+        
+        # If both are successful, return the combined data
+        return {
+            "claim": claim_response.data[0],
+            "media": media_response.data
+        }
+    
+    except Exception as e:
+        # --- CRITICAL ROLLBACK ---
+        # If the database fails, we MUST delete the files from storage.
+        print(f"Database error, rolling back storage: {e}")
+        if uploaded_storage_paths:
+            supabase.storage.from_(BUCKET_NAME).remove(uploaded_storage_paths)
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Error saving to database: {str(e)}"
         )
 
 

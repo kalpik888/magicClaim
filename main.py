@@ -191,7 +191,7 @@ async def upload_multiple_media(
 @app.post("/claim/full_submission")
 async def create_claim_and_upload_media(
     # These are all the individual form fields
-    uploaded_by_user_id: int = Form(...),
+    uploaded_by_user_id: str = Form(...),
     files: List[UploadFile] = File(...),
     descriptions: List[str] = Form(...),
     

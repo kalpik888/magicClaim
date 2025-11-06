@@ -101,6 +101,14 @@ def get_media_for_claim(media_id : int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
+@app.get("/claims/{customer_id}")
+def get_media_for_claim(customer_id : str):
+    try:
+        response = supabase.table("claim").select("*").eq("customer_id", customer_id).execute()
+        return response.data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
 
 @app.post("/claims", response_model=ClaimResponse)
 def create_claim(claim_data: ClaimCreate):

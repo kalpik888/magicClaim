@@ -121,8 +121,19 @@ def get_media_for_claim(customer_id : str):
 @app.get("/claim/{claim_id}")
 def get_media_for_claim(claim_id : str):
     try:
-        response = supabase.table("claim").select("*").eq("claim_id", claim_id).execute()
-        return response.data
+        claim_response = supabase.table("claim").select("*").eq("claim_id", claim_id).execute()
+        media_response = supabase.table("claim_media").select("*").eq("claim_id", claim_id).execute()
+        return claim_response.data + media_response.data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+    
+@app.get("/claim_car/{customer_id}")
+def get_media_for_claim(customer_id : str):
+    try:
+        claim_response = supabase.table("claim").select("*").eq("customer_id", customer_id).execute()
+        car_response = supabase.table("car").select("*").eq("customer_id", customer_id).execute()
+        return claim_response.data + car_response.data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
@@ -378,7 +389,7 @@ async def update_claim_and_media(
     new_descriptions: List[str] = Form([]),
     
     # Optional: List of existing media_ids to DELETE
-    media_to_delete_json: str = Form("[]"), 
+    #, 
 ):
     """
     Updates an existing claim, adds new media, and deletes old media.
@@ -420,12 +431,12 @@ async def update_claim_and_media(
     # --- END MODIFIED SECTION ---
 
     # Parse the list of media IDs to delete
-    try:
-        media_ids_to_delete = json.loads(media_to_delete_json)
-        if not isinstance(media_ids_to_delete, list):
-            raise ValueError("media_to_delete_json must be a JSON list.")
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON for media_to_delete_json: {str(e)}")
+    # try:
+    #     media_ids_to_delete = json.loads(media_to_delete_json)
+    #     if not isinstance(media_ids_to_delete, list):
+    #         raise ValueError("media_to_delete_json must be a JSON list.")
+    # except Exception as e:
+    #     raise HTTPException(status_code=400, detail=f"Invalid JSON for media_to_delete_json: {str(e)}")
 
     # (This logic remains the same)
     if len(new_descriptions) == 1 and "," in new_descriptions[0]:
@@ -474,15 +485,15 @@ async def update_claim_and_media(
 
     # --- 4. Get Storage Paths for Media to Delete ---
     # (This section is unchanged)
-    storage_paths_to_delete = []
-    if media_ids_to_delete:
-        try:
-            media_records = supabase.table("claim_media").select("media_id", "storage_path") \
-                .in_("media_id", media_ids_to_delete).execute()
+    # storage_paths_to_delete = []
+    # if media_ids_to_delete:
+    #     try:
+    #         media_records = supabase.table("claim_media").select("media_id", "storage_path") \
+    #             .in_("media_id", media_ids_to_delete).execute()
             
-            storage_paths_to_delete = [m['storage_path'] for m in media_records.data]
-        except Exception as e:
-            print(f"Warning: Could not fetch storage paths for media to delete: {str(e)}")
+    #         storage_paths_to_delete = [m['storage_path'] for m in media_records.data]
+    #     except Exception as e:
+    #         print(f"Warning: Could not fetch storage paths for media to delete: {str(e)}")
 
 
     # --- 5. Save All Changes to Database ---
@@ -512,11 +523,11 @@ async def update_claim_and_media(
 
         # --- 6. (On Success) Delete Old Files from Storage ---
         # (This logic is unchanged)
-        if storage_paths_to_delete:
-            try:
-                supabase.storage.from_(BUCKET_NAME).remove(storage_paths_to_delete)
-            except Exception as e:
-                print(f"Warning: DB delete succeeded, but failed to remove files from storage: {str(e)}")
+        # if storage_paths_to_delete:
+        #     try:
+        #         supabase.storage.from_(BUCKET_NAME).remove(storage_paths_to_delete)
+        #     except Exception as e:
+        #         print(f"Warning: DB delete succeeded, but failed to remove files from storage: {str(e)}")
 
         return {
             "message": "Claim updated successfully.",

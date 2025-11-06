@@ -55,7 +55,7 @@ except Exception as e:
 
 
 # This is the name of your bucket in Supabase Storage
-BUCKET_NAME = "photos" 
+BUCKET_NAME = "claims-media" 
 
 # Pydantic model for updating the title
 class PhotoUpdate(BaseModel):
@@ -121,9 +121,19 @@ def get_media_for_claim(customer_id : str):
 @app.get("/claim/{claim_id}")
 def get_media_for_claim(claim_id : str):
     try:
+        policy_id_res = supabase.table("claim").select("policy_id").eq("claim_id", claim_id).execute()
+        policy_id = None
+        if(policy_id_res.data):
+            policy_id = policy_id_res.data[0]['policy_id']
+
+        car_id_res = supabase.table("policy").select("car_id").eq("policy_id", policy_id).execute()
+        car_id = None
+        if(car_id_res.data):
+            car_id = car_id_res.data[0]['car_id']
+        car_response = supabase.table("car").select("*").eq("car_id", car_id).execute()
         claim_response = supabase.table("claim").select("*").eq("claim_id", claim_id).execute()
         media_response = supabase.table("claim_media").select("*").eq("claim_id", claim_id).execute()
-        return claim_response.data + media_response.data
+        return claim_response.data + media_response.data + car_response.data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     

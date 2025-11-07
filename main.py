@@ -467,25 +467,45 @@ async def update_claim_and_media(
         try:
             desc_text = new_descriptions[index]
             description = desc_text if desc_text else None
+            
             file_extension = os.path.splitext(file.filename)[1]
+            # This is the internal path, used for uploading and deleting
             file_path = f"claims/{claim_id}/{uuid.uuid4()}{file_extension}" 
+            
             file_content = await file.read()
             
-            supabase.storage.from_(BUCKET_NAME).upload(
+            # --- START FIX ---
+
+            # 1. Upload the file and CAPTURE the response
+            upload_res = supabase.storage.from_(BUCKET_NAME).upload(
                 path=file_path,
                 file=file_content,
                 file_options={"content-type": file.content_type}
             )
+
+            # 2. Check for an upload error (like in your first snippet)
+            #    Note: Supabase-py returns a dict on error, not an exception
+            if hasattr(upload_res, "error") and upload_res.error:
+                 raise Exception(f"Upload failed: {upload_res.error.message}")
+
+            # 3. Get the public URL
+            public_url = supabase.storage.from_(BUCKET_NAME).get_public_url(file_path)
             
+            # --- END FIX ---
+
+            # Add path to this list (for rollbacks)
             newly_uploaded_storage_paths.append(file_path)
+            
+            # Add the PUBLIC URL to the database
             db_media_entries_to_add.append({
                 "claim_id": claim_id,
                 "uploaded_by_user_id": edited_by_user_id,
-                "storage_path": file_path,
+                "storage_path": public_url,  # <--- Use the public_url here
                 "description": description
             })
             
         except Exception as e:
+            # --- ROLLBACK FILES ---
             if newly_uploaded_storage_paths:
                 supabase.storage.from_(BUCKET_NAME).remove(newly_uploaded_storage_paths)
             raise HTTPException(

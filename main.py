@@ -20,7 +20,7 @@ origins = [
     "http://localhost:5173",  # A common Vite default
     "http://localhost:3000",  # A common React default
     "http://localhost",
-    # "https'://your-deployed-frontend.com"  # <-- Add your LIVE frontend URL here
+    "https://magicclaims-production.up.railway.app/"
 ]
 
 app.add_middleware(

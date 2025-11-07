@@ -597,29 +597,64 @@ def update_photo_title(media_id: int,photo_update: UploadFile = File(...)):
 ### API 4: Delete a Photo
 @app.delete("/photos/{media_id}")
 def delete_photo(media_id: int):
-    """Deletes a photo from the DB and from Supabase Storage."""
+    """
+    Deletes a photo from the DB and Storage,
+    but only if it's not the last photo for the claim.
+    """
     try:
-        # 1. Find the photo in the DB to get its storage_path
-        select_response = supabase.table("claim_media").select("storage_path").eq("media_id", media_id).execute()
+        # --- 1. Find the photo AND its claim_id ---
+        # We need the claim_id to perform the count
+        select_response = supabase.table("claim_media") \
+            .select("storage_path, claim_id") \
+            .eq("media_id", media_id) \
+            .maybe_single() \
+            .execute()
+
         if not select_response.data:
             raise HTTPException(status_code=404, detail="Photo not found.")
         
-        storage_path = select_response.data[0].get("storage_path")
+        storage_url = select_response.data.get("storage_path")
+        claim_id = select_response.data.get("claim_id")
 
-        # 2. Delete the file from Supabase Storage
-        if storage_path:
-            supabase.storage.from_(BUCKET_NAME).remove([storage_path])
+        if not claim_id:
+             raise HTTPException(status_code=500, detail="Database integrity error: Photo is not linked to a claim.")
 
-        # 3. Delete the record from the database
+        # --- 2. NEW: Check if this is the last photo ---
+        count_response = supabase.table("claim_media") \
+            .select("media_id", count='exact') \
+            .eq("claim_id", claim_id) \
+            .execute()
+
+        if count_response.count <= 1:
+            # This is the last photo. Block the deletion.
+            raise HTTPException(
+                status_code=400, 
+                detail="Cannot delete the last photo. A claim must have at least one photo."
+            )
+
+        # --- 3. FIXED: Delete the file from Supabase Storage ---
+        if storage_url:
+            try:
+                # We MUST parse the internal path from the full URL
+                internal_path = storage_url.split(f"{BUCKET_NAME}/", 1)[1]
+                supabase.storage.from_(BUCKET_NAME).remove([internal_path])
+            except Exception as e:
+                # Log this, but don't stop the DB delete.
+                print(f"Warning: Failed to delete file from storage: {str(e)}")
+
+        # --- 4. Delete the record from the database ---
         delete_response = supabase.table("claim_media").delete().eq("media_id", media_id).execute()
         
         if not delete_response.data:
+            # This shouldn't happen if step 1 passed, but it's good to check
             raise HTTPException(status_code=404, detail="Failed to delete photo record.")
 
         return {"message": "Photo deleted successfully", "deleted_record": delete_response.data[0]}
     
+    except HTTPException as e:
+        # Re-raise HTTPException so FastAPI shows the correct status code
+        raise e
     except Exception as e:
+        # Catch any other unexpected errors
         raise HTTPException(status_code=500, detail=str(e))
-    
-# doing this for trigger
 

@@ -9,11 +9,13 @@ from typing import List,Optional
 from datetime import date, time,datetime
 import json
 from fastapi.middleware.cors import CORSMiddleware
+from photo_agent import router as photo_agent_router
 
 # Load environment variables from .env
 load_dotenv()
 
 app = FastAPI()
+app.include_router(photo_agent_router)
 
 origins = [
     "http://localhost:5174",  # Your dev frontend from the error
@@ -130,10 +132,23 @@ def get_media_for_claim(claim_id : str):
         car_id = None
         if(car_id_res.data):
             car_id = car_id_res.data[0]['car_id']
+        
+        cust_id_res = supabase.table("claim").select("customer_id").eq("claim_id", claim_id).execute()
+        cust_id=None
+        if(cust_id_res.data):
+            cust_id = cust_id_res.data[0]['customer_id']
+
+        shop_id_res = cust_id_res = supabase.table("claim").select("repair_shop_id_done").eq("claim_id", claim_id).execute()
+        shop_id=None
+        if(shop_id_res.data):
+            shop_id = shop_id_res.data[0]['repair_shop_id_done']
+
+        shop_response = supabase.table("repair_shop").select("*").eq("repair_shop_id", shop_id).execute()
+        cust_response = supabase.table("customer").select("*").eq("customer_id", cust_id).execute()
         car_response = supabase.table("car").select("*").eq("car_id", car_id).execute()
         claim_response = supabase.table("claim").select("*").eq("claim_id", claim_id).execute()
         media_response = supabase.table("claim_media").select("*").eq("claim_id", claim_id).execute()
-        return claim_response.data + media_response.data + car_response.data
+        return claim_response.data + media_response.data + car_response.data + cust_response.data + shop_response.data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     

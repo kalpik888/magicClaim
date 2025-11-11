@@ -6,6 +6,3 @@ class DamagedParts(BaseModel):
     parts: List[str] = Field(
         description="A unique, consolidated list of all damaged car parts identified across all provided images."
     )
-    summary: str = Field(
-        description="A brief, one-sentence summary of the overall damage (e.g., 'Severe front-end collision damage')."
-    )

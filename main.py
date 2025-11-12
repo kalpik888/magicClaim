@@ -142,13 +142,15 @@ def get_media_for_claim(claim_id : str):
         shop_id=None
         if(shop_id_res.data):
             shop_id = shop_id_res.data[0]['repair_shop_id_done']
+        
+        pol_no = supabase.table("policy").select("policy_number").eq("policy_id", policy_id).execute()
 
         shop_response = supabase.table("repair_shop").select("*").eq("repair_shop_id", shop_id).execute()
         cust_response = supabase.table("customer").select("*").eq("customer_id", cust_id).execute()
         car_response = supabase.table("car").select("*").eq("car_id", car_id).execute()
         claim_response = supabase.table("claim").select("*").eq("claim_id", claim_id).execute()
         media_response = supabase.table("claim_media").select("*").eq("claim_id", claim_id).execute()
-        return claim_response.data + media_response.data + car_response.data + cust_response.data + shop_response.data
+        return claim_response.data + media_response.data + car_response.data + cust_response.data + shop_response.data + pol_no.data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
@@ -592,13 +594,13 @@ async def update_claim_and_media(
             detail=f"Error saving to database: {str(e)}"
         )
 
-@app.put("/photos/{media_id}")
-def update_photo_title(media_id: int,photo_update: UploadFile = File(...)):
+@app.put("/description/{media_id}")
+def update_photo_title(media_id: int,desc: str):
     """Updates the 'title' of a photo in the database."""
     
     try:
         response = supabase.table("claim_media").update(
-            {"title": photo_update.title}
+            {"description": desc}
         ).eq("media_id", media_id).execute()
         
         if not response.data:
